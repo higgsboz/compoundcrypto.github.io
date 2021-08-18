@@ -1,15 +1,20 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import './App.css';
-import { Input, Form, FormGroup, Label, Button, InputGroup } from 'reactstrap';
+import { Input, Form, FormGroup, Label, Button, InputGroup, InputGroupAddon } from 'reactstrap';
 import Select from 'react-select';
 
 type CompoundData = {
-  cryptoCount: number,
-  fiatCount: number
+  num: number,
+  coin: Coin
 }
 
+type Coin = {
+  name: string,
+  price: number
+} | null
+
 type CryptoSelectOption = {
-  value: string,
+  value: Coin,
   label: string
 }
 
@@ -23,11 +28,10 @@ type RegularContribution = {
   frequency: number
 }
 
-const cryptoOptions: CryptoSelectOption[] = [
-  { value: 'ADA', label: 'ADA' },
-  { value: 'BTC', label: 'BTC' },
-  { value: 'ETH', label: 'ETH' }
-]
+type TickerResponse = {
+  symbol: string,
+  price: string
+}
 
 const freqOptions: FreqSelectOption[] = [
   { value: 365, label: 'Daily'},
@@ -44,17 +48,13 @@ const calculateFuture = (years: number, rate: number, regularContribution: Regul
   return (regularContribution.amount * ((Math.pow(1 + (rate / regularContribution.frequency), (years * regularContribution.frequency)) - 1) / (rate/regularContribution.frequency)));
 }
 
-const calculateCompound = (initial: number, years: number, rate: number, freq: number, crypto: string, regularContribution: RegularContribution): CompoundData => {
+const calculateCompound = (initial: number, years: number, rate: number, freq: number, crypto: Coin, regularContribution: RegularContribution): CompoundData => {
   let data: CompoundData = {
-    cryptoCount: 0,
-    fiatCount: 0
+    num: 0,
+    coin: crypto
   };
 
-  console.log(regularContribution);
-  console.log(calculatePrincipal(initial, years, rate, freq));
-  console.log(calculateFuture(years, rate, regularContribution));
-
-  data.cryptoCount = calculatePrincipal(initial, years, rate, freq) + calculateFuture(years, rate, regularContribution);
+  data.num = calculatePrincipal(initial, years, rate, freq) + calculateFuture(years, rate, regularContribution);
 
   return data;
 }
@@ -68,12 +68,35 @@ const App = () => {
   const [frequency, setFrequency] = useState<FreqSelectOption | null>(freqOptions[0]);
   const [contFrequency, setContFrequency] = useState<FreqSelectOption | null>(freqOptions[0]);
   const [contribution, setContribution] = useState<number>(0);
-  const [crypto, setCrypto] = useState<CryptoSelectOption | null>(cryptoOptions[0]);
+  const [crypto, setCrypto] = useState<CryptoSelectOption | null>(null);
+  const [cryptoOptions, setCryptoOptions] = useState<CryptoSelectOption[]>([])
+  const [futurePrice, setFuturePrice] = useState<number>(0);
 
+
+  const getCryptoList = (): Promise<CryptoSelectOption[]> => {
+    let response: TickerResponse[] = [];
+    return fetch('https://api.binance.com/api/v3/ticker/price', {
+      method: 'GET'
+    })
+      .then(response => response.json())
+      .then(data => {
+        response = data
+        const tickers = data.reduce((res: CryptoSelectOption[], pair: TickerResponse) => {
+          const symbol = pair.symbol;
+          if(symbol.substring(symbol.length-4, symbol.length) === 'USDT') {
+            const ticker = symbol.substring(0, symbol.length-4);
+            res.push({value: {name: ticker, price: parseFloat(pair.price)}, label: ticker});
+          }
+          return res;
+        }, [])
+        console.log(tickers);
+        return tickers;
+      });
+  }
 
   const handleSubmit = (e: any) => {
     e.preventDefault();
-    setCompoundData(calculateCompound(initialInvestment, years, interestRate, frequency?.value || 1, crypto?.value || 'BTC', {amount: contribution, frequency: contFrequency?.value || 0}));
+    setCompoundData(calculateCompound(initialInvestment, years, interestRate, frequency?.value || 1, crypto?.value || null, {amount: contribution, frequency: contFrequency?.value || 0}));  
   }
 
   const handleInputChange = (e: any) => {
@@ -82,11 +105,19 @@ const App = () => {
       case "years": setYears(e.target.value); break;
       case "interestRate": setInterestRate(e.target.value); break;
       case "contribution": setContribution(e.target.value); break;
-      // case "frequency": setFrequency(e.target.value); break;
-      // case "crypto": setCrypto(e.target.value); break;
+      case "futurePrice": setFuturePrice(e.target.value); break;
     }
   }
 
+  useEffect(() => {
+    getCryptoList().then(setCryptoOptions)
+  }, [])
+
+  useEffect(() => {
+    if(cryptoOptions?.length) {
+      setCrypto(cryptoOptions[0])
+    }
+  }, [cryptoOptions])
 
   return (
     <div className="pt-3 container">
@@ -99,17 +130,17 @@ const App = () => {
 
         <FormGroup>
           <Label for="initialInvestment">Initial Investment</Label>
-          <Input id="initialInvestment" name="initialInvestment" onChange={handleInputChange}/>
+          <Input id="initialInvestment" name="initialInvestment" pattern="^\d*(\.\d{0,2})?$" onChange={handleInputChange}/>
         </FormGroup>
 
         <FormGroup>
           <Label for="years">Years</Label>
-          <Input id="years" name="years" onChange={handleInputChange}/>
+          <Input id="years" name="years" pattern="^\d*(\.\d{0,2})?$" onChange={handleInputChange}/>
         </FormGroup>
 
         <FormGroup>
           <Label for="interestRate">Interest Rate</Label>
-          <Input id="interestRate" name="interestRate" onChange={handleInputChange}/>
+          <Input id="interestRate" name="interestRate" pattern="^\d*(\.\d{0,2})?$" onChange={handleInputChange}/>
         </FormGroup>
 
         <FormGroup>
@@ -118,18 +149,28 @@ const App = () => {
         </FormGroup>
 
         <FormGroup>
-          <InputGroup>
+          <Label for="contGroup">Regular Contributions</Label>
+          <InputGroup id="contGroup">
             <Input id="contribution" name="contribution" onChange={handleInputChange}/>
-            <Select id="contFrequency" name="contFrequency" options={freqOptions} value={contFrequency} onChange={option => setContFrequency(option)}/>
+            <Select className="p-0 form-control" id="contFrequency" name="contFrequency" options={freqOptions} value={contFrequency} onChange={option => setContFrequency(option)}/>
           </InputGroup>
         </FormGroup>
 
-        <Button type="submit">Calculate</Button>
+        <FormGroup>
+          <Label for="futurePriceGroup">Estimated Future Price</Label>
+          <InputGroup id="futurePriceGroup">
+            <InputGroupAddon addonType="prepend">$</InputGroupAddon>
+            <Input id="futurePrice" name="futurePrice" pattern="^\d*(\.\d{0,2})?$" onChange={handleInputChange}/>
+          </InputGroup>
+        </FormGroup>
+
+        <Button className="form-control" type="submit">Calculate</Button>
       </Form>
       {compoundData && (
-        <div className="p-6">
-          <p>Cypto: {compoundData.cryptoCount}</p>
-          <p>Fiat: {compoundData.fiatCount}</p>
+        <div className="mt-6">
+          <p>Amount: {compoundData.num} {compoundData.coin?.name} @ {compoundData.coin?.price}</p>
+          <p>USD: {compoundData.num * (compoundData.coin?.price || 1)}</p>
+          <p>Estimated Future Price: {compoundData.num * (compoundData.coin?.price || 1) * futurePrice}</p>
         </div>
       )}
     </div>

@@ -17,6 +17,9 @@
 .env.development.local
 .env.test.local
 .env.production.local
+coinmarketcap-apikey.txt
+binance-apikey.txt
+binance-secretkey.txt
 
 npm-debug.log*
 yarn-debug.log*
