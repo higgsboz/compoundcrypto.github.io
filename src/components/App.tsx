@@ -1,5 +1,4 @@
 import React, {useEffect, useState} from 'react';
-import './App.css';
 import { Input, Form, FormGroup, Label, Button, InputGroup, InputGroupAddon } from 'reactstrap';
 import Select from 'react-select';
 
@@ -59,6 +58,11 @@ const calculateCompound = (initial: number, years: number, rate: number, freq: n
   return data;
 }
 
+const displayNum = (num: number | null | undefined, currencyFormat: boolean) => {
+  const options = currencyFormat ? { style: 'currency', currency: 'USD', currencyDisplay: 'narrowSymbol'} : { maximumSignificantDigits: 3 };
+  return num === null || num === undefined ? 0 : new Intl.NumberFormat('en-US', options).format(num);
+}
+
 const App = () => {
 
   const [compoundData, setCompoundData] = useState<CompoundData | null>(null)
@@ -74,13 +78,11 @@ const App = () => {
 
 
   const getCryptoList = (): Promise<CryptoSelectOption[]> => {
-    let response: TickerResponse[] = [];
     return fetch('https://api.binance.com/api/v3/ticker/price', {
       method: 'GET'
     })
       .then(response => response.json())
       .then(data => {
-        response = data
         const tickers = data.reduce((res: CryptoSelectOption[], pair: TickerResponse) => {
           const symbol = pair.symbol;
           if(symbol.substring(symbol.length-4, symbol.length) === 'USDT') {
@@ -168,9 +170,9 @@ const App = () => {
       </Form>
       {compoundData && (
         <div className="mt-6">
-          <p>Amount: {compoundData.num} {compoundData.coin?.name} @ {compoundData.coin?.price}</p>
-          <p>USD: {compoundData.num * (compoundData.coin?.price || 1)}</p>
-          <p>Estimated Future Price: {compoundData.num * (compoundData.coin?.price || 1) * futurePrice}</p>
+          <p>Amount: {displayNum(compoundData.num, false)} {compoundData.coin?.name} @ {displayNum(compoundData.coin?.price, false)}</p>
+          <p>USD: {displayNum(compoundData.num * (compoundData.coin?.price || 1), true)}</p>
+          <p>Estimated Future Price: {displayNum(compoundData.num * (compoundData.coin?.price || 1) * futurePrice, true)}</p>
         </div>
       )}
     </div>
